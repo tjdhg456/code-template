@@ -1,0 +1,13 @@
+{
+  "gpu": "1,2,3",
+  "resume": false,
+
+  "total_epoch": 200,
+  "lr": 1e-3,
+  "scheduler": null,
+  "batch_size": 512,
+
+  "ddp": true,
+  "pin_memory": true,
+  "mixed_precision": true
+}
