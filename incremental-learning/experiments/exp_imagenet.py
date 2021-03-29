@@ -38,17 +38,20 @@ if __name__=='__main__':
 
     # Setup Configuration for Each Experiments
     if args.exp == 1:
-        server = 'hinton'
-        save_dir = '/data/sung/checkpoint/incremental_learning'
-        exp_name = 'test'
+        server = 'nipa'
+        save_dir = '/home/sung/checkpoint/cl'
+        data_dir = '/home/sung/dataset'
+        data_type = 'cifar100'
+
+        exp_name = 'imp'
         start = 0
-        ix = 0
         comb_list = []
 
         num_per_gpu = 1
-        gpus = ['4,5,6']
-        epoch_list = [100]
+        gpus = ['0,1,2']
+        epoch_list = [1]
 
+        ix = 0
         for epoch in epoch_list:
             comb_list.append([epoch, ix])
             ix += 1
@@ -72,7 +75,8 @@ if __name__=='__main__':
             gpu = gpus[ix]
 
             # Modify the data configuration
-            json_data
+            json_data['data_dir'] = str(data_dir)
+            json_data['data_type'] = str(data_type)
             save_json(json_data, os.path.join(save_dir, exp_name, str(exp_num), 'data.json'))
 
             # Modify the network configuration

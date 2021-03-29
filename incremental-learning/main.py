@@ -1,6 +1,3 @@
-import json
-import numpy as np
-import pickle
 import argparse
 import os
 import neptune
@@ -8,10 +5,8 @@ from copy import deepcopy
 
 import torch
 import torch.nn as nn
-from torch.utils.data import Dataset, DataLoader
-from torchvision.models import resnet18
+from torch.utils.data import DataLoader
 
-from module import trainer
 from module.load_module import load_model, load_loss, load_optimizer, load_scheduler
 from utility.utils import config, train_module
 from utility.earlystop import EarlyStopping
@@ -21,6 +16,7 @@ from data.dataset import load_data, IncrementalSet
 import torch.distributed as dist
 import torch.multiprocessing as mp
 from torch.nn.parallel import DistributedDataParallel as DDP
+from utility.distributed import apply_gradient_allreduce, reduce_tensor
 
 
 def setup(rank, world_size):
@@ -54,7 +50,21 @@ def main(rank, option, task_id, save_folder):
 
 
     # Load Model
-    old_model = load_model(option)
+    def calc_num_class(task_id):
+        if task_id == 0:
+            num_class = option.result['train']['num_init_segment']
+        else:
+            num_class = option.result['train']['num_init_segment'] + option.result['train']['num_segment'] * task_id
+        return num_class
+
+    if task_id == 0:
+        new_class = calc_num_class(0)
+        old_class = calc_num_class(0)
+    else:
+        new_class = calc_num_class(task_id)
+        old_class = calc_num_class(task_id - 1)
+
+    old_model = load_model(option, old_class)
     criterion = load_loss(option)
 
     if resume:
@@ -64,13 +74,22 @@ def main(rank, option, task_id, save_folder):
 
 
     # New Model
-    if option.result['network']['pretrain_new_model']:
+    if option.result['train']['pretrain_new_model'] and task_id > 0:
         new_model = deepcopy(old_model)
+        new_model.model_cls.fc = nn.Linear(new_model.model_cls.fc.in_features, new_class)
+        new_model.model_cls.fc.weight.data[:old_class] = old_model.model_cls.fc.weight.data
+        new_model.model_cls.fc.bias.data[:old_class] = old_model.model_cls.fc.bias.data
     else:
-        new_model = load_model(option)
+        new_model = load_model(option, new_class)
 
     save_module = train_module(total_epoch, new_model, criterion, multi_gpu)
 
+    # Load Old Exemplary Samples
+    if (option.result['train']['num_exemplary'] > 0) and (task_id > 0):
+        new_model.exemplar_list = torch.load(os.path.join(save_folder, 'task_%d_exemplar.pt' %(task_id-1)))
+
+    else:
+        new_model.exemplar_list = []
 
     # Multi-Processing GPUs
     if ddp:
@@ -83,6 +102,9 @@ def main(rank, option, task_id, save_folder):
 
         old_model = DDP(old_model, device_ids=[rank])
         new_model = DDP(new_model, device_ids=[rank])
+
+        old_model = apply_gradient_allreduce(old_model)
+        new_model = apply_gradient_allreduce(new_model)
 
         criterion.to(rank)
 
@@ -103,6 +125,7 @@ def main(rank, option, task_id, save_folder):
     # Early Stopping
     early = EarlyStopping(patience=option.result['train']['patience'])
 
+
     # Dataset and DataLoader
     if task_id == 0:
         start = 0
@@ -111,13 +134,22 @@ def main(rank, option, task_id, save_folder):
         start = option.result['train']['num_init_segment'] + option.result['train']['num_segment'] * (task_id - 1)
         end = start + option.result['train']['num_segment']
 
+    # Training Set
     tr_target_list = list(range(start, end))
     val_target_list = list(range(0, end))
 
     tr_dataset = load_data(option, data_type='train')
-    tr_dataset = IncrementalSet(tr_dataset, start, target_list=tr_target_list)
+    tr_dataset = IncrementalSet(tr_dataset, start, target_list=tr_target_list, shuffle_label=True)
+
+    if (task_id > 0) and (option.result['train']['num_exemplary'] > 0):
+        if multi_gpu:
+            tr_dataset.update_exemplar(new_model.module.exemplar_list)
+        else:
+            tr_dataset.update_exemplar(new_model.exemplar_list)
+
+    # Validation Set
     val_dataset = load_data(option, data_type='val')
-    val_dataset = IncrementalSet(val_dataset, start, target_list=val_target_list)
+    val_dataset = IncrementalSet(val_dataset, start, target_list=val_target_list, shuffle_label=False)
 
     if ddp:
         tr_sampler = torch.utils.data.distributed.DistributedSampler(dataset=tr_dataset,
@@ -145,31 +177,119 @@ def main(rank, option, task_id, save_folder):
 
 
     # Training
-    old_model.eval()
-    for epoch in range(0, save_module.total_epoch):
-        new_model.train()
-        new_model, optimizer, save_module = trainer.train(option, rank, epoch, task_id, new_model, old_model, \
-                                                          criterion, optimizer, tr_loader, scaler, save_module)
+    if option.result['train']['train_type'] == 'naive':
+        from module.trainer import naive_trainer
 
-        new_model.eval()
-        result = trainer.validation(option, rank, epoch, task_id, new_model, old_model, criterion, val_loader)
+        old_model.eval()
+        for epoch in range(0, save_module.total_epoch):
+            new_model.train()
+            new_model, optimizer, save_module = naive_trainer.train(option, rank, epoch, task_id, new_model, old_model, \
+                                                                    criterion, optimizer, tr_loader, scaler, save_module)
 
-        if scheduler is not None:
-            scheduler.step()
-            save_module.save_dict['scheduler'] = [scheduler.state_dict()]
-        else:
-            save_module.save_dict['scheduler'] = None
+            new_model.eval()
+            result = naive_trainer.validation(option, rank, epoch, task_id, new_model, old_model, criterion, val_loader)
 
-        # Early Stop
-        if multi_gpu:
-            param = deepcopy(new_model.module.state_dict())
-        else:
-            param = deepcopy(new_model.state_dict())
+            if scheduler is not None:
+                scheduler.step()
+                save_module.save_dict['scheduler'] = [scheduler.state_dict()]
+            else:
+                save_module.save_dict['scheduler'] = None
 
-        early(result['val_loss'], param, result)
-        if early.early_stop == True:
-            break
+            # Early Stop
+            if multi_gpu:
+                param = deepcopy(new_model.module.state_dict())
+            else:
+                param = deepcopy(new_model.state_dict())
 
+            early(result['val_loss'], param, result)
+            if early.early_stop == True:
+                break
+
+
+    elif option.result['train']['train_type'] == 'icarl':
+        from module.trainer import icarl_trainer
+
+        old_model.eval()
+        for epoch in range(0, save_module.total_epoch):
+            new_model.train()
+            new_model, optimizer, save_module = icarl_trainer.train(option, rank, epoch, task_id, new_model, old_model, \
+                                                                    criterion, optimizer, tr_loader, scaler, save_module)
+
+            new_model.eval()
+            result = icarl_trainer.validation(option, rank, epoch, task_id, new_model, old_model, criterion, val_loader)
+
+            if scheduler is not None:
+                scheduler.step()
+                save_module.save_dict['scheduler'] = [scheduler.state_dict()]
+            else:
+                save_module.save_dict['scheduler'] = None
+
+            # Early Stop
+            if multi_gpu:
+                param = deepcopy(new_model.module.state_dict())
+            else:
+                param = deepcopy(new_model.state_dict())
+
+            early(result['val_loss'], param, result)
+            if early.early_stop == True:
+                break
+
+        # Save Exemplary
+        if (option.result['train']['num_exemplary'] > 0) and ((rank == 0) or (rank == 'cuda')):
+            m = int(option.result['train']['num_exemplary'] / new_class)
+
+            if task_id > 0:
+                if multi_gpu:
+                    new_model.module.reduce_old_exemplar(m)
+                else:
+                    new_model.reduce_old_exemplar(m)
+
+            for n in tr_target_list:
+                n_data = tr_dataset.get_image_class(n)
+                if multi_gpu:
+                    new_model.module.get_new_exemplar(n_data, m, rank)
+                else:
+                    new_model.get_new_exemplar(n_data, m, rank)
+
+            if multi_gpu:
+                torch.save(new_model.module.exemplar_list, os.path.join(save_folder, 'task_%d_exemplar.pt' %(task_id)))
+            else:
+                torch.save(new_model.exemplar_list, os.path.join(save_folder, 'task_%d_exemplar.pt' %(task_id)))
+
+
+    elif option.result['train']['train_type'] == 'wo_exemple':
+        from module.trainer import wo_exemple_trainer
+
+        old_model.eval()
+        for epoch in range(0, save_module.total_epoch):
+            new_model.train()
+            new_model, optimizer, save_module = wo_exemple_trainer.train(option, rank, epoch, task_id, new_model, old_model, \
+                                                                         criterion, optimizer, tr_loader, scaler, save_module)
+
+            new_model.eval()
+            result = wo_exemple_trainer.validation(option, rank, epoch, task_id, new_model, old_model, criterion, val_loader)
+
+            if scheduler is not None:
+                scheduler.step()
+                save_module.save_dict['scheduler'] = [scheduler.state_dict()]
+            else:
+                save_module.save_dict['scheduler'] = None
+
+            # Early Stop
+            if multi_gpu:
+                param = deepcopy(new_model.module.state_dict())
+            else:
+                param = deepcopy(new_model.state_dict())
+
+            early(result['val_loss'], param, result)
+            if early.early_stop == True:
+                break
+
+    else:
+        raise('select proper train_type')
+
+
+    # Saver
     if (rank == 'cuda') or (rank==0):
         # Load the best model
         best_param = early.model
@@ -231,7 +351,6 @@ if __name__=='__main__':
             option = config(save_folder)
             option.import_config(config_path)
 
-
     # Logger
     neptune.init('sunghoshin/imp', api_token='eyJhcGlfYWRkcmVzcyI6Imh0dHBzOi8vdWkubmVwdHVuZS5haSIsImFwaV91cmwiOiJodHRwczovL3VpLm5lcHR1bmUuYWkiLCJhcGlfa2V5IjoiYzdlYWFkMjctOWExMS00YTRlLWI0MWMtY2FhNmIyNzZlYTIyIn0=')
     exp_name, exp_num = save_folder.split('/')[-2], save_folder.split('/')[-1]
@@ -256,6 +375,8 @@ if __name__=='__main__':
     else:
         num_task = 1 + int((option.result['data']['num_class'] - option.result['train']['num_init_segment']) / option.result['train']['num_segment'])
 
+
+    # Task
     for task_id in range(resume_task_id, num_task):
         if ddp:
             mp.spawn(main, args=(option, task_id, save_folder, ), nprocs=num_gpu, join=True)
@@ -274,6 +395,6 @@ if __name__=='__main__':
         acc5 = float(result_line[start[1]+1 : end[1]].strip())
         val_loss = float(result_line[start[2]+1 : -1].strip())
 
-        neptune.log_metric('acc@1', task_id, acc1)
-        neptune.log_metric('acc@5', task_id, acc5)
+        neptune.log_metric('val_acc1', task_id, acc1)
+        neptune.log_metric('val_acc5', task_id, acc5)
         neptune.log_metric('val_loss', task_id, val_loss)

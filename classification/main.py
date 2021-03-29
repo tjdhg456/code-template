@@ -10,7 +10,6 @@ import torch.nn as nn
 from torch.utils.data import Dataset, DataLoader
 from torchvision.models import resnet18
 
-from module import trainer
 from module.load_module import load_model, load_loss, load_optimizer, load_scheduler
 from utility.utils import config, train_module
 from utility.earlystop import EarlyStopping
@@ -21,6 +20,7 @@ from copy import deepcopy
 import torch.distributed as dist
 import torch.multiprocessing as mp
 from torch.nn.parallel import DistributedDataParallel as DDP
+from utility.distributed import apply_gradient_allreduce, reduce_tensor
 
 
 def setup(rank, world_size):
@@ -71,6 +71,7 @@ def main(rank, option, resume, save_folder):
 
         model.to(rank)
         model = DDP(model, device_ids=[rank])
+        model = apply_gradient_allreduce(model)
 
         criterion.to(rank)
 
@@ -127,13 +128,14 @@ def main(rank, option, resume, save_folder):
         scaler = None
 
     # Training
+    from module.trainer import naive_trainer
     for epoch in range(save_module.init_epoch, save_module.total_epoch):
         model.train()
-        model, optimizer, save_module = trainer.train(option, rank, epoch, model, criterion, optimizer, \
-                                                      tr_loader, scaler, save_module, neptune, save_folder)
+        model, optimizer, save_module = naive_trainer.train(option, rank, epoch, model, criterion, optimizer, \
+                                                            tr_loader, scaler, save_module, neptune, save_folder)
 
         model.eval()
-        result = trainer.validation(option, rank, epoch, model, criterion, val_loader, neptune)
+        result = naive_trainer.validation(option, rank, epoch, model, criterion, val_loader, neptune)
 
         if scheduler is not None:
             scheduler.step()
@@ -196,6 +198,10 @@ if __name__=='__main__':
         else:
             option = config(save_folder)
             option.import_config(config_path)
+
+    # Data Directory
+    option.result['data']['data_dir'] = os.path.join(option.result['data']['data_dir'], option.result['data']['data_type'])
+
 
     # GPU
     os.environ["CUDA_VISIBLE_DEVICES"] = option.result['train']['gpu']

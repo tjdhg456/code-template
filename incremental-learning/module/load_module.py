@@ -1,9 +1,11 @@
 import torch
 import torch.nn as nn
 from torchvision.models.resnet import resnet18
+from .network import Incremental_Wrapper
 
-def load_model(option):
-    model = resnet18(pretrained=False, num_classes=option.result['data']['num_class'])
+def load_model(option, num_class):
+    model_cls = resnet18(pretrained=False, num_classes=num_class)
+    model = Incremental_Wrapper(option, model_cls)
     return model
 
 def load_optimizer(option, param):

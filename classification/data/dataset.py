@@ -67,9 +67,9 @@ def load_data(option, data_type='train'):
     if option.result['data']['data_type'] == 'cifar10':
         tr_d, val_d = load_cifar10(option)
     elif option.result['data']['data_type'] == 'cifar100':
-        tr_d, val_d = load_cifar10(option)
+        tr_d, val_d = load_cifar100(option)
     elif option.result['data']['data_type'] == 'imagenet':
-        tr_d, val_d = load_cifar10(option)
+        tr_d, val_d = load_imagenet(option)
     else:
         raise('select appropriate dataset')
 
