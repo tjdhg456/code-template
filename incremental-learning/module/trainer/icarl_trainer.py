@@ -2,8 +2,13 @@ import numpy as np
 import torch
 from tqdm import tqdm
 from utility.distributed import apply_gradient_allreduce, reduce_tensor
+import os
 from torch.autograd import Variable
 from copy import deepcopy
+from module.load_module import load_model, load_loss, load_optimizer, load_scheduler
+from torch.nn.parallel import DistributedDataParallel as DDP
+import torch.nn as nn
+import os
 
 def accuracy(output, target, topk=(1,)):
     """Computes the accuracy over the k top predictions for the specified values of k"""
@@ -174,36 +179,103 @@ def test(option, rank, new_model, val_loader):
     result = {'acc1':mean_acc1, 'acc5':mean_acc5, 'val_loss':mean_loss}
     return result
 
-# def test(option, rank, new_model, val_loader):
-#     num_gpu = len(option.result['train']['gpu'].split(','))
-#
-#     # For Log
-#     mean_loss = 0.
-#     mean_acc1 = 0.
-#     mean_acc5 = 0.
-#
-#     with torch.no_grad():
-#         for val_data in tqdm(val_loader):
-#             input, label = val_data
-#             input, label = input.to(rank), label.to(rank)
-#
-#             output = new_model(input)
-#             acc_result = accuracy(output, label, topk=(1, 5))
-#
-#             if (num_gpu > 1) and (option.result['train']['ddp']):
-#                 mean_acc1 += reduce_tensor(acc_result[0], num_gpu)
-#                 mean_acc5 += reduce_tensor(acc_result[1], num_gpu)
-#
-#             else:
-#                 mean_acc1 += acc_result[0]
-#                 mean_acc5 += acc_result[1]
-#
-#         # Train Result
-#         mean_acc1 /= len(val_loader)
-#         mean_acc5 /= len(val_loader)
-#
-#         # Logging
-#         if (rank == 0) or (rank == 'cuda'):
-#             print('Final Result - val_ACC@1: %.2f, val_ACC@5-%.2f, val_loss:%.3f' % (mean_acc1, mean_acc5, mean_loss))
-#     result = {'acc1':mean_acc1, 'acc5':mean_acc5, 'val_loss':mean_loss}
-#     return result
+
+def run(option, new_model, old_model, new_class, old_class, tr_loader, val_loader, tr_dataset, val_dataset, tr_target_list, val_target_list,
+        optimizer, criterion, scaler, scheduler, early, early_stop, save_folder, save_module, multi_gpu, rank, task_id, ddp):
+
+    old_model.eval()
+    for epoch in range(0, save_module.total_epoch):
+        new_model.train()
+        new_model, optimizer, save_module = train(option, rank, epoch, task_id, new_model, old_model, \
+                                                                criterion, optimizer, tr_loader, scaler, save_module)
+
+        # Validate
+        new_model.eval()
+        result = validation(option, rank, epoch, task_id, new_model, old_model, criterion, val_loader)
+
+        if scheduler is not None:
+            scheduler.step()
+            save_module.save_dict['scheduler'] = [scheduler.state_dict()]
+        else:
+            save_module.save_dict['scheduler'] = None
+
+        # Early Stop
+        if multi_gpu:
+            param = deepcopy(new_model.module.state_dict())
+        else:
+            param = deepcopy(new_model.state_dict())
+
+        if option.result['train']['early_criterion_loss']:
+            early(result['val_loss'], param, result)
+        else:
+            early(-result['acc1'], param, result)
+
+        if early.early_stop == True:
+            break
+
+    # After training
+    if (option.result['train']['num_exemplary'] > 0) and ((rank == 0) or (rank == 'cuda')):
+        if early_stop:
+            # Load Best Models
+            del old_model, new_model
+
+            new_model = load_model(option, new_class)
+            new_model.load_state_dict(early.model)
+            if (option.result['train']['num_exemplary'] > 0) and (task_id > 0):
+                new_model.exemplar_list = torch.load(os.path.join(save_folder, 'task_%d_exemplar.pt' % (task_id - 1)))
+            else:
+                new_model.exemplar_list = []
+
+            # Multi-Processing GPUs
+            if ddp:
+                new_model.to(rank)
+                new_model = DDP(new_model, device_ids=[rank])
+            else:
+                if multi_gpu:
+                    new_model = nn.DataParallel(new_model).to(rank)
+                else:
+                    new_model = new_model.to(rank)
+
+        # Save Exemplary Sets
+        m = int(option.result['train']['num_exemplary'] / new_class)
+
+        if task_id > 0:
+            if multi_gpu:
+                new_model.module.reduce_old_exemplar(m)
+            else:
+                new_model.reduce_old_exemplar(m)
+
+        for n in tr_target_list:
+            n_data = tr_dataset.get_image_class(n)
+            if multi_gpu:
+                new_model.module.get_new_exemplar(n_data, m, rank)
+            else:
+                new_model.get_new_exemplar(n_data, m, rank)
+
+        if multi_gpu:
+            torch.save(new_model.module.exemplar_list, os.path.join(save_folder, 'task_%d_exemplar.pt' % (task_id)))
+        else:
+            torch.save(new_model.exemplar_list, os.path.join(save_folder, 'task_%d_exemplar.pt' % (task_id)))
+
+        # Final Validation
+        new_model.eval()
+        result = test(option, rank, new_model, val_loader)
+        early.result = result
+
+        return early, save_module, option
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

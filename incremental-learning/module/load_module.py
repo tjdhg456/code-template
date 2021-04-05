@@ -6,6 +6,7 @@ from .resnet import resnet18_cbam, resnet34_cbam, resnet50_cbam, resnet152_cbam
 from copy import deepcopy
 import torch
 
+
 def load_model(option, num_class):
     model_enc = resnet18_cbam(pretrained=False)
     model_fc = nn.Linear(model_enc.num_feature, num_class, bias=True)

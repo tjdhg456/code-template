@@ -35,9 +35,9 @@ if __name__=='__main__':
 
     # Setup Configuration for Each Experiments
     if args.exp == 1:
-        server = 'nipa'
-        save_dir = '/home/sung/checkpoint/icarl'
-        data_dir = '/home/sung/dataset'
+        server = 'hinton'
+        save_dir = '/data/sung/checkpoint/icarl'
+        data_dir = '/data/sung/dataset'
         data_type_and_num = ('cifar100', 100)
 
         exp_name = 'early_stop_ex'
@@ -45,9 +45,9 @@ if __name__=='__main__':
         comb_list = []
 
         num_per_gpu = 1
-        gpus = ['0', '1', '1', '2']
+        gpus = ['0']
         train_list = ['icarl']
-        num_exemple_list = [100, 500, 1000, 2000]
+        num_exemple_list = [2000]
         optimizer_type = 'sgd'
         resume = False
         resume_task_id = 0

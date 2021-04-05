@@ -218,88 +218,9 @@ def main(rank, option, task_id, save_folder):
                 early.result = result
 
     elif option.result['train']['train_type'] == 'icarl':
-        from module.trainer import icarl_trainer
-
-        old_model.eval()
-        for epoch in range(0, save_module.total_epoch):
-            new_model.train()
-            new_model, optimizer, save_module = icarl_trainer.train(option, rank, epoch, task_id, new_model, old_model, \
-                                                                    criterion, optimizer, tr_loader, scaler, save_module)
-
-            # Validate
-            new_model.eval()
-            result = icarl_trainer.validation(option, rank, epoch, task_id, new_model, old_model, criterion, val_loader)
-
-            if scheduler is not None:
-                scheduler.step()
-                save_module.save_dict['scheduler'] = [scheduler.state_dict()]
-            else:
-                save_module.save_dict['scheduler'] = None
-
-            # Early Stop
-            if multi_gpu:
-                param = deepcopy(new_model.module.state_dict())
-            else:
-                param = deepcopy(new_model.state_dict())
-
-            if option.result['train']['early_criterion_loss']:
-                early(result['val_loss'], param, result)
-            else:
-                early(-result['acc1'], param, result)
-
-            if early.early_stop == True:
-                break
-
-
-        # After training
-        if (option.result['train']['num_exemplary'] > 0) and ((rank == 0) or (rank == 'cuda')):
-            if early_stop:
-                # Load Best Models
-                del old_model, new_model
-
-                new_model = load_model(option, new_class)
-                new_model.load_state_dict(early.model)
-                if (option.result['train']['num_exemplary'] > 0) and (task_id > 0):
-                    new_model.exemplar_list = torch.load(os.path.join(save_folder, 'task_%d_exemplar.pt' % (task_id - 1)))
-                else:
-                    new_model.exemplar_list = []
-
-                # Multi-Processing GPUs
-                if ddp:
-                    new_model.to(rank)
-                    new_model = DDP(new_model, device_ids=[rank])
-                else:
-                    if multi_gpu:
-                        new_model = nn.DataParallel(new_model).to(rank)
-                    else:
-                        new_model = new_model.to(rank)
-
-
-            # Save Exemplary Sets
-            m = int(option.result['train']['num_exemplary'] / new_class)
-
-            if task_id > 0:
-                if multi_gpu:
-                    new_model.module.reduce_old_exemplar(m)
-                else:
-                    new_model.reduce_old_exemplar(m)
-
-            for n in tr_target_list:
-                n_data = tr_dataset.get_image_class(n)
-                if multi_gpu:
-                    new_model.module.get_new_exemplar(n_data, m, rank)
-                else:
-                    new_model.get_new_exemplar(n_data, m, rank)
-
-            if multi_gpu:
-                torch.save(new_model.module.exemplar_list, os.path.join(save_folder, 'task_%d_exemplar.pt' %(task_id)))
-            else:
-                torch.save(new_model.exemplar_list, os.path.join(save_folder, 'task_%d_exemplar.pt' %(task_id)))
-
-            # Final Validation
-            new_model.eval()
-            result = icarl_trainer.test(option, rank, new_model, val_loader)
-            early.result = result
+        from module.trainer.icarl_trainer import run
+        early, save_module, option = run(option, new_model, old_model, new_class, old_class, tr_loader, val_loader, tr_dataset, val_dataset, tr_target_list, val_target_list,
+                                         optimizer, criterion, scaler, scheduler, early, early_stop, save_folder, save_module, multi_gpu, rank, task_id, ddp)
 
     else:
         raise('select proper train_type')
