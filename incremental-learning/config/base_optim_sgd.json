@@ -1,7 +1,7 @@
 {
   "optimizer": "sgd",
-  "weight_decay": 5e-4,
+  "weight_decay": 1e-5,
   "lr": 0.1,
-  "momentum": 0.9,
+  "momentum": 0.0,
   "nesterov": false
 }

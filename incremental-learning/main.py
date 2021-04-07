@@ -17,6 +17,7 @@ import torch.distributed as dist
 import torch.multiprocessing as mp
 from torch.nn.parallel import DistributedDataParallel as DDP
 from utility.distributed import apply_gradient_allreduce, reduce_tensor
+import numpy as np
 
 def setup(rank, world_size):
     os.environ['MASTER_ADDR'] = 'localhost'
@@ -344,3 +345,25 @@ if __name__=='__main__':
             neptune.log_metric('val_acc5', task_id, acc5)
             neptune.log_metric('val_loss', task_id, val_loss)
             neptune.log_metric('task_id', task_id)
+
+    # Total Average Result
+    val_acc1_list, val_acc5_list = [], []
+    with open(os.path.join(save_folder,'result.txt'), 'r') as f:
+        for task_id in range(num_task):
+            result = f.readline().strip()
+
+            start = [pos for pos, char in enumerate(result) if char == ':']
+            end = [pos for pos, char in enumerate(result) if char == ',']
+
+            acc1 = float(result[start[0] + 1: end[0]].strip())
+            acc5 = float(result[start[1] + 1: end[1]].strip())
+
+            val_acc1_list.append(acc1)
+            val_acc5_list.append(acc5)
+
+    val_acc1_total, val_acc5_total = np.mean(np.array(val_acc1_list)), np.mean(np.array(val_acc5_list))
+    print('Total Average Accuracy - acc@1: %.2f, acc@5: %.2f' %(val_acc1_total, val_acc5_total))
+
+    if args.log:
+        neptune.log_metric('val_acc1_total', val_acc1_total)
+        neptune.log_metric('val_acc5_total', val_acc5_total)

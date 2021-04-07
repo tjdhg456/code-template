@@ -183,7 +183,9 @@ def test(option, rank, new_model, val_loader):
 def run(option, new_model, old_model, new_class, old_class, tr_loader, val_loader, tr_dataset, val_dataset, tr_target_list, val_target_list,
         optimizer, criterion, scaler, scheduler, early, early_stop, save_folder, save_module, multi_gpu, rank, task_id, ddp):
     old_model.eval()
+
     for epoch in range(0, save_module.total_epoch):
+        # Training
         new_model.train()
         new_model, optimizer, save_module = train(option, rank, epoch, task_id, new_model, old_model, \
                                                                 criterion, optimizer, tr_loader, scaler, save_module)
@@ -260,7 +262,6 @@ def run(option, new_model, old_model, new_class, old_class, tr_loader, val_loade
         new_model.eval()
         result = test(option, rank, new_model, val_loader)
         early.result = result
-
         return early, save_module, option
 
 

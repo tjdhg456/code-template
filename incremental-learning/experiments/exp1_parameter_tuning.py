@@ -40,71 +40,7 @@ if __name__=='__main__':
         data_dir = '/home/sung/dataset'
         data_type_and_num = ('cifar100', 100)
 
-        exp_name = 'init'
-        start = 0
-        comb_list = []
-
-        num_per_gpu = 1
-        gpus = ['0']
-        network_type = 'resnet18'
-        train_list = ['icarl']
-        num_exemple_list = [2000]
-        optimizer_type = 'sgd'
-
-        # Initialize
-        only_init = True
-
-        # Resume Option
-        resume = False
-        resume_task_id = 0
-        init_path = None
-
-        ix = 0
-        for tr in train_list:
-            for num_ex in num_exemple_list:
-                comb_list.append([tr, num_ex, ix])
-                ix += 1
-
-    elif args.exp == 1:
-        server = 'nipa'
-        save_dir = '/home/sung/checkpoint/icarl'
-        data_dir = '/home/sung/dataset'
-        data_type_and_num = ('cifar100', 100)
-
-        exp_name = 'CL'
-        start = 0
-        comb_list = []
-
-        num_per_gpu = 1
-        network_type = 'resnet18'
-        gpus = ['0', '1', '2']
-        train_list = ['icarl']
-        num_exemple_list = [100, 500, 2000]
-        optimizer_type = 'sgd'
-
-        # Initialize
-        only_init = False
-
-        # Resume Option
-        resume = True
-        resume_task_id = 1
-
-        init_path = '/home/sung/checkpoint/icarl/init/0/task_0_dict.pt'
-
-        ix = 0
-        for tr in train_list:
-            for num_ex in num_exemple_list:
-                comb_list.append([tr, num_ex, ix])
-                ix += 1
-
-    # Start From Scratch
-    elif args.exp == 2:
-        server = 'nipa'
-        save_dir = '/home/sung/checkpoint/icarl'
-        data_dir = '/home/sung/dataset'
-        data_type_and_num = ('cifar100', 100)
-
-        exp_name = 'cLcL'
+        exp_name = 'parameter_control'
         start = 0
         comb_list = []
 
@@ -114,6 +50,10 @@ if __name__=='__main__':
         train_list = ['icarl']
         num_exemple_list = [2000]
         optimizer_type = 'sgd'
+
+        lr_list = [0.1]
+        weight_decay_list = [0.0001]
+        momentum_list = [0.9]
 
         # Initialize
         only_init = False
@@ -126,8 +66,11 @@ if __name__=='__main__':
         ix = 0
         for tr in train_list:
             for num_ex in num_exemple_list:
-                comb_list.append([tr, num_ex, ix])
-                ix += 1
+                for lr in lr_list:
+                    for weight in weight_decay_list:
+                        for momentum in momentum_list:
+                            comb_list.append([tr, num_ex, lr, weight, momentum, ix])
+                            ix += 1
 
     else:
         raise('Select Proper Experiment Number')
@@ -176,6 +119,11 @@ if __name__=='__main__':
             # Modify the optimizer configuration
             json_optim_path = '../config/base_optim_%s.json' %optimizer_type
             json_optim = load_json(json_optim_path)
+
+            json_optim['lr'] = float(comb_ix[2])
+            json_optim['weight_decay'] = float(comb_ix[3])
+            json_optim['momentum'] = float(comb_ix[4])
+
             save_json(json_optim, os.path.join(save_dir, exp_name, str(exp_num), 'optim.json'))
 
 
@@ -186,8 +134,10 @@ if __name__=='__main__':
 
             # Run !
             if init_path is not None:
+                script0 = 'cp -r %s %s' % (os.path.join('/'.join(init_path.split('/')[:-1]), 'result.txt'), os.path.join(save_dir, exp_name, str(exp_num)))
                 script1 = 'python ../generate_init_set.py --save_dir %s --exp_name %s --exp_num %s --init_path %s' %(save_dir, exp_name, exp_num, init_path)
                 script2 = 'python ../main.py --save_dir %s --exp_name %s --exp_num %d --log %s' % (save_dir, exp_name, exp_num, str(args.log))
+                subprocess.call(script0, shell=True)
                 subprocess.call(script1, shell=True)
                 subprocess.call(script2, shell=True)
 

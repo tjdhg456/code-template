@@ -36,7 +36,7 @@ def load_optimizer(option, params):
     elif optimizer == "adamw":
         return torch.optim.AdamW(params, lr=lr, weight_decay=weight_decay)
     elif optimizer == "sgd":
-        return torch.optim.SGD(params, lr=lr, weight_decay=weight_decay, momentum=option.result['optim']['momentum'])
+        return torch.optim.SGD(params, lr=lr, weight_decay=weight_decay, nesterov=option.result['optim']['nesterov'], momentum=option.result['optim']['momentum'])
     else:
         raise('Selec proper optimizer')
 

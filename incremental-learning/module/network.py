@@ -71,10 +71,11 @@ class Icarl_Wrapper(Incremental_Wrapper):
 
         ex_loader_imp = self.exemple_loader(data)
 
+        self.model_enc.eval()
+
         # Calculate the centers
         for img, label in ex_loader_imp:
             x = img.to(rank)
-            x.requires_grad = False
             with torch.no_grad():
                 feature = F.normalize(self.model_enc(x).detach()).cpu().numpy()
             features.append(feature)
@@ -101,6 +102,9 @@ class Icarl_Wrapper(Incremental_Wrapper):
 
     def update_center(self, rank):
         self.exemplar_means = []
+
+        self.model_enc.eval()
+
         for index in range(len(self.exemplar_list)):
             print("compute the class mean of %s"%(str(index)))
             exemplar = self.exemplar_list[index]
@@ -110,7 +114,6 @@ class Icarl_Wrapper(Incremental_Wrapper):
             ex_loader_imp = self.exemple_loader(exemplar)
             for img, label in ex_loader_imp:
                 x = img.to(rank)
-                x.requires_grad = False
                 with torch.no_grad():
                     feature = F.normalize(self.model_enc(x).detach()).cpu().numpy()
                 features.append(feature)
@@ -122,6 +125,9 @@ class Icarl_Wrapper(Incremental_Wrapper):
 
     def icarl_classify(self, x):
         result = []
+
+        self.model_enc.eval()
+
         x_out = F.normalize(self.model_enc(x).detach()).cpu().numpy()
         exemplar_means = np.array(self.exemplar_means)
         for target in x_out:
