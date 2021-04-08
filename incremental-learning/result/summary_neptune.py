@@ -24,17 +24,20 @@ def get_config(config_path, option):
 
     return param_list, column_list
 
-
-def summary(result_csv, config_dir, config_name, output_column, option_column, save_name):
+def summary(result_csv, config_dir, config_name, output_column, option_column, save_name, exp_name_criterion=None):
     df = pd.read_csv(result_csv)
     df_target = df.loc[:, output_column]
     df_exp = df.loc[:, ['exp_name', 'exp_num']]
 
     target_list = []
+    target_column = []
     for i in range(len(df_target)):
         target_output = list(df_target.iloc[i, :])
-        exp_name = df_exp.loc[i, 'exp_name']
-        exp_num = df_exp.loc[i, 'exp_num']
+        exp_name = str(df_exp.loc[i, 'exp_name'])
+        exp_num = str(df_exp.loc[i, 'exp_num'])
+
+        if (exp_name_criterion is not None) and (exp_name != exp_name_criterion):
+            continue
 
         config_path = os.path.join(config_dir, exp_name, str(exp_num), config_name)
         target_param, target_column = get_config(config_path, option_column)
@@ -43,8 +46,11 @@ def summary(result_csv, config_dir, config_name, output_column, option_column, s
 
     column_list = output_column + target_column + ['exp_name', 'exp_num']
 
-    df = pd.DataFrame(np.array(target_list), columns=column_list)
-    df.to_csv(save_name, index=False)
+    if len(target_list) == 0:
+        print('No Data!!')
+    else:
+        df = pd.DataFrame(np.array(target_list), columns=column_list)
+        df.to_csv(save_name, index=False)
 
 
 if __name__=='__main__':
@@ -56,7 +62,8 @@ if __name__=='__main__':
     config_name = 'task_1_config.json'
 
     # Save the result
-    summary(result_csv=result_file, config_dir=config_dir, config_name=config_name, output_column=out_column, option_column=option, save_name='./out/exp1_parameter_result.csv')
+    summary(result_csv=result_file, config_dir=config_dir, config_name=config_name, output_column=out_column, \
+            option_column=option, save_name='./out/exp1_parameter_result3.csv', exp_name_criterion='parameter_control')
 
 
 

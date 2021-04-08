@@ -42,18 +42,20 @@ if __name__=='__main__':
         server = 'nipa'
         save_dir = '/home/sung/checkpoint/icarl'
         data_dir = '/home/sung/dataset'
-        data_type_and_num = ('cifar100', 100)
+        data_type_and_num = ('food101', 101)
 
-        exp_name = 'parameter_control'
+        exp_name = 'food101_init'
         start = 0
         comb_list = []
 
         num_per_gpu = 1
-        network_type = 'resnet18'
-        gpus = ['0']
+        network_type = 'resnet34'
+        gpus = ['0', '1', '2']
         train_list = ['icarl']
         num_exemple_list = [2000]
         optimizer_type = 'sgd'
+
+        segment_num_list = [(10, 10), (50, 10), (50, 5)]
 
         lr_list = [0.1]
         weight_decay_list = [0.0001]
@@ -73,8 +75,9 @@ if __name__=='__main__':
                 for lr in lr_list:
                     for weight in weight_decay_list:
                         for momentum in momentum_list:
-                            comb_list.append([tr, num_ex, lr, weight, momentum, ix])
-                            ix += 1
+                            for seg in segment_num_list:
+                                comb_list.append([tr, num_ex, lr, weight, momentum, seg, ix])
+                                ix += 1
 
     else:
         raise('Select Proper Experiment Number')
@@ -117,6 +120,9 @@ if __name__=='__main__':
             json_train['resume_task_id'] = resume_task_id
             json_train['gpu'] = str(gpu)
             json_train['num_exemplary'] = int(comb_ix[1])
+
+            json_train['num_init_segment'] = int(comb_ix[5][0])
+            json_train['num_segment'] = int(comb_ix[5][1])
             save_json(json_train, os.path.join(save_dir, exp_name, str(exp_num), 'train.json'))
 
 

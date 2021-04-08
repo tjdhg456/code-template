@@ -8,10 +8,11 @@ import torch.nn as nn
 from torch.utils.data import DataLoader
 
 from module.load_module import load_model, load_loss, load_optimizer, load_scheduler
+
 from utility.utils import config, train_module
 from utility.earlystop import EarlyStopping
 
-from data.dataset import load_data, IncrementalSet
+from data.dataset import load_data, IncrementalSet, transform_module
 
 import torch.distributed as dist
 import torch.multiprocessing as mp
@@ -69,14 +70,14 @@ def main(rank, option, task_id, save_folder):
         new_class = calc_num_class(task_id)
         old_class = calc_num_class(task_id - 1)
 
-    old_model = load_model(option, old_class)
+    transform = transform_module(option)
+    old_model = load_model(option, num_class=old_class, old_class=old_class, new_class=new_class, transform=transform, device=rank)
     criterion = load_loss(option, old_class, new_class)
 
     if resume:
         save_module = train_module(total_epoch, old_model, criterion, multi_gpu)
         save_module.import_module(resume_path)
         old_model.load_state_dict(save_module.save_dict['model'][0])
-
 
     # New Model
     if option.result['train']['pretrain_new_model'] and task_id > 0:
@@ -86,12 +87,12 @@ def main(rank, option, task_id, save_folder):
         new_model.model_fc.bias.data[:old_class] = old_model.model_fc.bias.data
 
     else:
-        new_model = load_model(option, new_class)
+        new_model = load_model(option, num_class=new_class, old_class=old_class, new_class=new_class, transform=transform, device=rank)
 
     save_module = train_module(total_epoch, new_model, criterion, multi_gpu)
 
     # Load Old Exemplary Samples
-    if (option.result['train']['num_exemplary'] > 0) and (task_id > 0):
+    if (option.result['exemplar']['num_exemplary'] > 0) and (task_id > 0):
         new_model.exemplar_list = torch.load(os.path.join(save_folder, 'task_%d_exemplar.pt' %(task_id-1)))
     else:
         new_model.exemplar_list = []
@@ -139,6 +140,7 @@ def main(rank, option, task_id, save_folder):
         start = option.result['train']['num_init_segment'] + option.result['train']['num_segment'] * (task_id - 1)
         end = start + option.result['train']['num_segment']
 
+
     # Training Set
     tr_target_list = list(range(start, end))
     val_target_list = list(range(0, end))
@@ -147,11 +149,19 @@ def main(rank, option, task_id, save_folder):
     ex_dataset = load_data(option, data_type='exemplar')
     tr_dataset = IncrementalSet(tr_dataset, ex_dataset, start, target_list=tr_target_list, shuffle_label=True)
 
-    if (task_id > 0) and (option.result['train']['num_exemplary'] > 0):
+
+    # Update the image size as a sample
+    d_ex, _ = tr_dataset.__getitem__(0)
+    new_model.update_datasize(d_ex.size())
+
+    # Merge exemplar set into training dataset
+    if (task_id > 0) and (option.result['exemplar']['num_exemplary'] > 0):
         if multi_gpu:
-            tr_dataset.update_exemplar(new_model.module.exemplar_list)
+            new_model.module.get_aug_exemplar()
+            tr_dataset.update_exemplar(new_model.module.exemplar_aug_list)
         else:
-            tr_dataset.update_exemplar(new_model.exemplar_list)
+            new_model.get_aug_exemplar()
+            tr_dataset.update_exemplar(new_model.exemplar_aug_list)
 
     # Validation Set
     val_dataset = load_data(option, data_type='val')
@@ -269,10 +279,8 @@ if __name__=='__main__':
     save_folder = os.path.join(args.save_dir, args.exp_name, str(args.exp_num))
     os.makedirs(save_folder, exist_ok=True)
     option = config(save_folder)
-    option.get_config_data()
-    option.get_config_network()
-    option.get_config_train()
-    option.get_config_optimizer()
+    option.get_all_config()
+
 
     # Resume Configuration
     resume = option.result['train']['resume']
@@ -299,7 +307,7 @@ if __name__=='__main__':
         neptune.init('sunghoshin/imp', api_token=token)
         exp_name, exp_num = save_folder.split('/')[-2], save_folder.split('/')[-1]
         neptune.create_experiment(params={'exp_name':exp_name, 'exp_num':exp_num, 'train_type':option.result['train']['train_type'],
-                                          'num_exemplary':int(option.result['train']['num_exemplary'])},
+                                          'num_exemplary':int(option.result['exemplar']['num_exemplary'])},
                                   tags=['inference:False'])
 
 

@@ -8,7 +8,6 @@
   "pretrain_new_model": true,
   "num_init_segment": 10,
   "num_segment": 10,
-  "num_exemplary": 2000,
 
   "total_epoch": 100,
   "scheduler": "step",

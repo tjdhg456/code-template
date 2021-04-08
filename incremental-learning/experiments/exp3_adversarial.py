@@ -39,21 +39,25 @@ if __name__=='__main__':
 
     # Setup Configuration for Each Experiments
     if args.exp == 0:
-        server = 'nipa'
-        save_dir = '/home/sung/checkpoint/icarl'
-        data_dir = '/home/sung/dataset'
+        server = 'hinton'
+        save_dir = '/data/sung/checkpoint/icarl'
+        data_dir = '/data/sung/dataset'
         data_type_and_num = ('cifar100', 100)
 
-        exp_name = 'parameter_control'
+        exp_name = 'adversarial'
         start = 0
         comb_list = []
 
         num_per_gpu = 1
         network_type = 'resnet18'
-        gpus = ['0']
+        gpus = ['5','6','7']
         train_list = ['icarl']
-        num_exemple_list = [2000]
+        num_exemple_list = [100, 500, 2000]
+        # exemplar_type_list = [('data', None), ('logit', 'adversarial')]
+        exemplar_type_list = [('logit', 'adversarial')]
         optimizer_type = 'sgd'
+
+        segment_num_list = [(10, 10)]
 
         lr_list = [0.1]
         weight_decay_list = [0.0001]
@@ -73,12 +77,58 @@ if __name__=='__main__':
                 for lr in lr_list:
                     for weight in weight_decay_list:
                         for momentum in momentum_list:
-                            comb_list.append([tr, num_ex, lr, weight, momentum, ix])
-                            ix += 1
+                            for seg in segment_num_list:
+                                for exp in exemplar_type_list:
+                                    comb_list.append([tr, num_ex, lr, weight, momentum, seg, exp, ix])
+                                    ix += 1
+
+    elif args.exp == 1:
+        server = 'nipa'
+        save_dir = '/home/sung/checkpoint/icarl'
+        data_dir = '/home/sung/dataset'
+        data_type_and_num = ('cifar100', 100)
+
+        exp_name = 'naive'
+        start = 0
+        comb_list = []
+
+        num_per_gpu = 1
+        network_type = 'resnet18'
+        gpus = ['0','1','2']
+        train_list = ['icarl']
+        num_exemple_list = [100, 500, 2000]
+        exemplar_type_list = [('data', None)]
+        optimizer_type = 'sgd'
+
+        segment_num_list = [(10, 10)]
+
+        lr_list = [0.1]
+        weight_decay_list = [0.0001]
+        momentum_list = [0.9]
+
+        # Initialize
+        only_init = False
+
+        # Resume Option
+        resume = False
+        resume_task_id = 0
+        init_path = None
+
+        ix = 0
+        for tr in train_list:
+            for num_ex in num_exemple_list:
+                for lr in lr_list:
+                    for weight in weight_decay_list:
+                        for momentum in momentum_list:
+                            for seg in segment_num_list:
+                                for exp in exemplar_type_list:
+                                    comb_list.append([tr, num_ex, lr, weight, momentum, seg, exp, ix])
+                                    ix += 1
 
     else:
         raise('Select Proper Experiment Number')
 
+    # Split the Combinations into gpu array
     comb_list = comb_list * num_per_gpu
     comb_list = [comb + [index] for index, comb in enumerate(comb_list)]
 
@@ -87,6 +137,7 @@ if __name__=='__main__':
     for ix in range(len(gpus)):
         arr_dict[ix] = arr[ix]
 
+    # Function for Runnign the GPU
     def tr_gpu(comb, ix):
         comb = comb[ix]
         for i, comb_ix in enumerate(comb):
@@ -116,7 +167,9 @@ if __name__=='__main__':
             json_train['resume'] = resume
             json_train['resume_task_id'] = resume_task_id
             json_train['gpu'] = str(gpu)
-            json_train['num_exemplary'] = int(comb_ix[1])
+
+            json_train['num_init_segment'] = int(comb_ix[5][0])
+            json_train['num_segment'] = int(comb_ix[5][1])
             save_json(json_train, os.path.join(save_dir, exp_name, str(exp_num), 'train.json'))
 
 
@@ -136,9 +189,10 @@ if __name__=='__main__':
             json_meta['save_dir'] = str(save_dir)
             save_json(json_meta, os.path.join(save_dir, exp_name, str(exp_num), 'meta.json'))
 
-
             # Modify the exemplar Configuration
-            json_exemplar
+            json_exemplar['exemplar_type'] = comb_ix[6][0]
+            json_exemplar['augment'] = comb_ix[6][1]
+            json_exemplar['num_exemplary'] = int(comb_ix[1])
             save_json(json_exemplar, os.path.join(save_dir, exp_name, str(exp_num), 'exemplar.json'))
 
 

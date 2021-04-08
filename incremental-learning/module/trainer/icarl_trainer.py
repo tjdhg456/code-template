@@ -145,14 +145,15 @@ def validation(option, rank, epoch, task_id, new_model, old_model, criterion, va
     return result
 
 
-def test(option, rank, new_model, val_loader):
+def test(option, rank, new_model, val_loader, task_id):
     num_gpu = len(option.result['train']['gpu'].split(','))
     multi_gpu = num_gpu > 1
 
-    if multi_gpu:
-        new_model.module.update_center(rank)
-    else:
-        new_model.update_center(rank)
+    if task_id > 0:
+        if multi_gpu:
+            new_model.module.update_center(rank)
+        else:
+            new_model.update_center(rank)
 
     # For Log
     mean_loss = 0.
@@ -162,10 +163,13 @@ def test(option, rank, new_model, val_loader):
     for img, label in val_loader:
         img, label = img.to(rank), label.to(rank)
         with torch.no_grad():
-            if multi_gpu:
-                output = new_model.module.icarl_classify(img)
+            if task_id == 0 or option.result['exemplar']['augment'] == 'adversarial':
+                output = new_model(img)
             else:
-                output = new_model.icarl_classify(img)
+                if multi_gpu:
+                    output = new_model.module.icarl_classify(img)
+                else:
+                    output = new_model.icarl_classify(img)
 
         acc_result = accuracy(output.cpu(), label.cpu(), topk=(1, 5))
         mean_acc1 += acc_result[0]
@@ -215,14 +219,14 @@ def run(option, new_model, old_model, new_class, old_class, tr_loader, val_loade
             break
 
     # After training
-    if (option.result['train']['num_exemplary'] > 0) and ((rank == 0) or (rank == 'cuda')):
+    if (option.result['exemplar']['num_exemplary'] > 0) and ((rank == 0) or (rank == 'cuda')):
         if early_stop:
             # Load Best Models
             del old_model, new_model
 
             new_model = load_model(option, new_class)
             new_model.load_state_dict(early.model)
-            if (option.result['train']['num_exemplary'] > 0) and (task_id > 0):
+            if (option.result['exemplar']['num_exemplary'] > 0) and (task_id > 0):
                 new_model.exemplar_list = torch.load(os.path.join(save_folder, 'task_%d_exemplar.pt' % (task_id - 1)))
             else:
                 new_model.exemplar_list = []
@@ -238,15 +242,16 @@ def run(option, new_model, old_model, new_class, old_class, tr_loader, val_loade
                     new_model = new_model.to(rank)
 
         # Save Exemplary Sets
-        m = int(option.result['train']['num_exemplary'] / new_class)
-
+        m = int(option.result['exemplar']['num_exemplary'] / new_class)
+        print('Update Old Exemplary Set')
         if task_id > 0:
             if multi_gpu:
                 new_model.module.reduce_old_exemplar(m)
             else:
                 new_model.reduce_old_exemplar(m)
 
-        for n in tr_target_list:
+        print('Update New Exemplary Set')
+        for n in tqdm(tr_target_list):
             n_data = tr_dataset.get_image_class(n)
             if multi_gpu:
                 new_model.module.get_new_exemplar(n_data, m, rank)
@@ -260,7 +265,7 @@ def run(option, new_model, old_model, new_class, old_class, tr_loader, val_loade
 
         # Final Validation
         new_model.eval()
-        result = test(option, rank, new_model, val_loader)
+        result = test(option, rank, new_model, val_loader, task_id)
         early.result = result
         return early, save_module, option
 

@@ -1,28 +1,34 @@
 import torch
 import torch.nn as nn
-from .network import Incremental_Wrapper, Icarl_Wrapper, Identity_Layer
+from .network import Incremental_Wrapper, Augment_Wrapper, Identity_Layer
 from .loss import icarl_loss
-from .resnet_cifar import ResNet18, ResNet34, ResNet50, ResNet101, ResNet152
 from copy import deepcopy
 import torch
 
-def load_model(option, num_class):
+def load_model(option, num_class, old_class, new_class, device, transform=None):
     if 'cifar' in option.result['data']['data_type']:
-        if option.result['network']['network_type'] == 'resnet18':
-            model_enc = ResNet18()
-        elif option.result['network']['network_type'] == 'resnet34':
-            model_enc = ResNet34()
-        else:
-            raise('Select Proper Network Type')
+        from .resnet_cifar import ResNet18, ResNet34, ResNet50, ResNet101, ResNet152
     else:
-        raise('Select Proper Data Type')
+        from .resnet_imagenet import ResNet18, ResNet34, ResNet50, ResNet101, ResNet152
+
+    # Load Network Architecture
+    if option.result['network']['network_type'] == 'resnet18':
+        model_enc = ResNet18()
+    elif option.result['network']['network_type'] == 'resnet34':
+        model_enc = ResNet34()
+    else:
+        raise('Select Proper Network Type')
 
     model_fc = nn.Linear(model_enc.num_feature, num_class, bias=True)
 
     if option.result['train']['train_type'] == 'icarl':
-        model = Icarl_Wrapper(option, model_enc=model_enc, model_fc=model_fc)
+        if option.result['exemplar']['augment'] is None:
+            model = Incremental_Wrapper(option, model_enc=model_enc, model_fc=model_fc, old_class=old_class, new_class=new_class, device=device)
+        else:
+            model = Augment_Wrapper(option, model_enc, model_fc, old_class, new_class, device, transform)
     else:
-        model = Incremental_Wrapper(option, model_enc=model_enc, model_fc=model_fc)
+        raise('Select Proper training type')
+
     return model
 
 

@@ -23,6 +23,17 @@ class config():
         config_optim = self.load_json(os.path.join(self.config_dir, 'optim.json'))
         self.result['optim'] = config_optim
 
+    def get_config_exemplar(self):
+        config_exemplar = self.load_json(os.path.join(self.config_dir, 'exemplar.json'))
+        self.result['exemplar'] = config_exemplar
+
+    def get_all_config(self):
+        self.get_config_data()
+        self.get_config_network()
+        self.get_config_train()
+        self.get_config_optimizer()
+        self.get_config_exemplar()
+
     def load_json(self, json_path):
         with open(json_path, 'r') as f:
             out = json.load(f)

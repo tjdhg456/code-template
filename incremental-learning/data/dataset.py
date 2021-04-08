@@ -4,6 +4,7 @@ from torch.utils.data import Dataset, DataLoader
 import numpy as np
 import os
 from random import shuffle
+import torch
 
 def load_cifar10(option):
     tr_transform = transforms.Compose([
@@ -19,37 +20,24 @@ def load_cifar10(option):
         transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)),
     ])
 
-
     tr_dataset = torchvision.datasets.CIFAR10(root=os.path.join(option.result['data']['data_dir'], option.result['data']['data_type']), train=True, download=True, transform=tr_transform)
     val_dataset = torchvision.datasets.CIFAR10(root=os.path.join(option.result['data']['data_dir'], option.result['data']['data_type']), train=False, download=True, transform=val_transform)
     ex_dataset = torchvision.datasets.CIFAR10(root=os.path.join(option.result['data']['data_dir'], option.result['data']['data_type']), train=True, download=True, transform=val_transform)
     return tr_dataset, val_dataset, ex_dataset
 
 def load_cifar100(option):
-    # tr_transform = transforms.Compose([
-    #     transforms.RandomCrop(32, padding=4),
-    #     transforms.RandomHorizontalFlip(),
-    #     transforms.ToTensor(),
-    #     transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)),
-    # ])
-    #
-    #
-    # val_transform = transforms.Compose([
-    #     transforms.ToTensor(),
-    #     transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)),
-    # ])
-
-    tr_transform = transforms.Compose([  # transforms.Resize(img_size),
-        transforms.RandomCrop((32, 32), padding=4),
-        transforms.RandomHorizontalFlip(p=0.5),
-        transforms.ColorJitter(brightness=0.24705882352941178),
+    tr_transform = transforms.Compose([
+        transforms.RandomCrop(32, padding=4),
+        transforms.RandomHorizontalFlip(),
         transforms.ToTensor(),
-        transforms.Normalize((0.5071, 0.4867, 0.4408), (0.2675, 0.2565, 0.2761))])
+        transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)),
+    ])
 
-    val_transform = transforms.Compose([  # transforms.Resize(img_size),
+
+    val_transform = transforms.Compose([
         transforms.ToTensor(),
-        transforms.Normalize((0.5071, 0.4867, 0.4408), (0.2675, 0.2565, 0.2761))])
-
+        transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)),
+    ])
 
     tr_dataset = torchvision.datasets.CIFAR100(root=os.path.join(option.result['data']['data_dir'], option.result['data']['data_type']), train=True, download=True, transform=tr_transform)
     val_dataset = torchvision.datasets.CIFAR100(root=os.path.join(option.result['data']['data_dir'], option.result['data']['data_type']), train=False, download=True, transform=val_transform)
@@ -81,6 +69,24 @@ def load_imagenet(option):
     return tr_dataset, val_dataset, ex_dataset
 
 
+def load_food101(option):
+    tr_transform = transforms.Compose([
+            transforms.RandomResizedCrop(224),
+            transforms.RandomHorizontalFlip(),
+            transforms.ToTensor(),
+            transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])])
+
+    val_transform = transforms.Compose([
+            transforms.CenterCrop(224),
+            transforms.ToTensor(),
+            transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])])
+
+    tr_dataset = torchvision.datasets.ImageFolder(root=os.path.join(option.result['data']['data_dir'], option.result['data']['data_type'], 'train'), transform=tr_transform)
+    val_dataset = torchvision.datasets.ImageFolder(root=os.path.join(option.result['data']['data_dir'], option.result['data']['data_type'], 'val'), transform=val_transform)
+    ex_dataset = torchvision.datasets.ImageFolder(root=os.path.join(option.result['data']['data_dir'], option.result['data']['data_type'], 'train'), transform=val_transform)
+    return tr_dataset , val_dataset, ex_dataset
+
+
 def load_data(option, data_type='train'):
     if option.result['data']['data_type'] == 'cifar10':
         tr_d, val_d, ex_d = load_cifar10(option)
@@ -88,6 +94,8 @@ def load_data(option, data_type='train'):
         tr_d, val_d, ex_d = load_cifar100(option)
     elif option.result['data']['data_type'] == 'imagenet':
         tr_d, val_d, ex_d = load_imagenet(option)
+    elif option.result['data']['data_type'] == 'food101':
+        tr_d, val_d, ex_d = load_food101(option)
     else:
         raise('select appropriate dataset')
 
@@ -98,6 +106,36 @@ def load_data(option, data_type='train'):
     else:
         return ex_d
 
+class transform_module():
+    def __init__(self, option):
+        if 'cifar' in option.result['data']['data_type']:
+            mu = np.array([0.4914, 0.4822, 0.4465])
+            std = np.array([0.2023, 0.1994, 0.2010])
+        elif option.result['data']['data_type'] == 'imagenet':
+            mu = np.array([0.485, 0.456, 0.406])
+            std = np.array([0.229, 0.224, 0.225])
+        elif option.result['data']['data_type'] == 'food101':
+            mu = np.array([0.485, 0.456, 0.406])
+            std = np.array([0.229, 0.224, 0.225])
+        else:
+            raise ('select appropriate dataset')
+
+        self.mu = mu
+        self.std = std
+
+    def normalize(self, img):
+        img = torch.squeeze(img)
+        img = transforms.Normalize(self.mu, self.std)(img)
+        img = torch.unsqueeze(img, dim=0)
+        return img
+
+    def un_normalize(self, img):
+        transform_un_normalize = transforms.Compose([transforms.Normalize((0,0,0), 1/self.std),
+                                                     transforms.Normalize(-self.mu, (1,1,1))])
+        img = torch.squeeze(img)
+        img = transform_un_normalize(img)
+        img = torch.unsqueeze(img, dim=0)
+        return img
 
 class IncrementalSet(Dataset):
     def __init__(self, dataset, dataset_exemplar, start, target_list, shuffle_label=False):

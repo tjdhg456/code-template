@@ -1,0 +1,6 @@
+{
+  "num_exemplary": 2000,
+  "sampling_type": "herding",
+  "exemplar_type": "logit",
+  "augment": "adversarial"
+}
