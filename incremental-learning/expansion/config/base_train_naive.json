@@ -1,0 +1,23 @@
+{
+  "gpu": "0,1,2",
+  "only_init": false,
+  "resume": false,
+  "resume_task_id": 0,
+
+  "train_type": "naive",
+  "pretrain_new_model": true,
+  "num_init_segment": 10,
+  "num_segment": 10,
+
+  "total_epoch": 100,
+  "scheduler": "step",
+  "batch_size": 128,
+
+  "ddp": false,
+  "pin_memory": true,
+  "mixed_precision": false,
+
+  "early": false,
+  "patience": 10000,
+  "early_criterion_loss": false
+}

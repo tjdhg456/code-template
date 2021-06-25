@@ -1,0 +1,6 @@
+{
+  "optimizer": "adam",
+  "weight_decay": 0.0002,
+  "lr": 2.0,
+  "nesterov": false
+}
