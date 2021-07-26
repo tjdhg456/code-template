@@ -83,6 +83,7 @@ Run on multiple machines:
         "--machine-rank", type=int, default=0, help="the rank of this machine (unique per machine)"
     )
 
+    parser.add_argument("--output_dir", type=str, default='checkpoint')
     # PyTorch still may leave orphan processes in multi-gpu training.
     # Therefore we use a deterministic way to obtain port,
     # so that users are aware of orphan processes by seeing the port occupied.
@@ -202,7 +203,7 @@ def setup(args, resume=False):
 
         config_data['_BASE_'] = os.path.join(args.base_dir, config_data['_BASE_'])
         config_data['MODEL']['WEIGHTS'] = os.path.join(args.base_dir, config_data['MODEL']['WEIGHTS'])
-        config_data['OUTPUT_DIR'] = os.path.join(args.base_dir, config_data['OUTPUT_DIR'])
+        config_data['OUTPUT_DIR'] = os.path.join(args.base_dir, args.output_dir)
 
         with open(args.config_file.replace('.yaml', '_new.yaml'), "w") as f:
             yaml.dump(config_data, f)
@@ -228,8 +229,8 @@ def register_data(args):
                             os.path.join(DATA_DIR, 'images_enhancement', 'dark', '400'))
 
 def main(args):
-    args.config_file = '/home/sung/src/code-template/detectron2/checkpoint_enhancement/config.yaml'
-    args.resume = True
+    # args.config_file = '/home/sung/src/code-template/detectron2/checkpoint_enhancement/config.yaml'
+    args.resume = False
     args.log = True
     args.neptune_id = None
 

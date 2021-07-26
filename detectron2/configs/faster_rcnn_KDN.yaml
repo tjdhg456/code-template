@@ -18,4 +18,3 @@ SOLVER:
   CHECKPOINT_PERIOD: 1
 TEST:
   EVAL_PERIOD: 1
-OUTPUT_DIR: "checkpoint_enhancement"
