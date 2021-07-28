@@ -70,7 +70,7 @@ def main(rank, option, resume, save_folder, log, master_port):
             mode = 'debug'
 
         if resume and option.result['meta']['neptune_id'] is not None:
-            run = neptune.init('sunghoshin/revisit', api_token=token,
+            run = neptune.init('sunghoshin/%s' %option.result['meta']['project_folder'], api_token=token,
                                capture_stdout=False,
                                capture_stderr=False,
                                capture_hardware_metrics=False,
@@ -78,7 +78,7 @@ def main(rank, option, resume, save_folder, log, master_port):
                                mode = mode
                                )
         else:
-            run = neptune.init('sunghoshin/revisit', api_token=token,
+            run = neptune.init('sunghoshin/%s' %option.result['meta']['project_folder'], api_token=token,
                                capture_stdout=False,
                                capture_stderr=False,
                                capture_hardware_metrics=False,
@@ -257,7 +257,6 @@ if __name__=='__main__':
     option.get_config_train()
     option.get_config_meta()
     option.get_config_tune()
-
 
     # Resume Configuration
     resume = option.result['train']['resume']

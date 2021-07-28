@@ -77,7 +77,13 @@ def train(option, rank, epoch, model, criterion, optimizer, multi_gpu, tr_loader
     mean_loss /= len(tr_loader)
 
     # Saving Network Params
-    model_param = None
+    if option.result['tune']['tuning']:
+        model_param = None
+    else:
+        if multi_gpu:
+            model_param = model.module.state_dict()
+        else:
+            model_param = model.state_dict()
 
     save_module.save_dict['model'] = [model_param]
     save_module.save_dict['optimizer'] = [optimizer.state_dict()]
@@ -95,6 +101,9 @@ def train(option, rank, epoch, model, criterion, optimizer, multi_gpu, tr_loader
             # Save
             if epoch % option.result['train']['save_epoch'] == 0:
                 torch.save(model_param, os.path.join(save_folder, 'epoch%d_model.pt' %epoch))
+
+    if (num_gpu > 1) and (option.result['train']['ddp']) and not option.result['tune']['tuning']:
+        dist.barrier()
 
     return model, optimizer, save_module
 

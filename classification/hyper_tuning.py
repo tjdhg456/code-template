@@ -83,7 +83,7 @@ def main(configs, option, log=False):
         hard_ware_monitoring = True
 
         if resume and option.result['meta']['neptune_id'] is not None:
-            run = neptune.init('sunghoshin/module-merge', api_token=token,
+            run = neptune.init('sunghoshin/%s' %option.result['meta']['project_folder'], api_token=token,
                                capture_stdout=hard_ware_monitoring,
                                capture_stderr=hard_ware_monitoring,
                                capture_hardware_metrics=hard_ware_monitoring,
@@ -91,7 +91,7 @@ def main(configs, option, log=False):
                                mode = mode
                                )
         else:
-            run = neptune.init('sunghoshin/module-merge', api_token=token,
+            run = neptune.init('sunghoshin/%s' %option.result['meta']['project_folder'], api_token=token,
                                capture_stdout=hard_ware_monitoring,
                                capture_stderr=hard_ware_monitoring,
                                capture_hardware_metrics=hard_ware_monitoring,
@@ -258,9 +258,29 @@ if __name__=='__main__':
         name='logging',
         callbacks=[ray.tune.logger.JsonLoggerCallback()])
 
+    # TOTAL Logger
+    token = 'eyJhcGlfYWRkcmVzcyI6Imh0dHBzOi8vYXBwLm5lcHR1bmUuYWkiLCJhcGlfdXJsIjoiaHR0cHM6Ly9hcHAubmVwdHVuZS5haSIsImFwaV9rZXkiOiI5MTQ3MjY2Yy03YmM4LTRkOGYtOWYxYy0zOTk3MWI0ZDY3M2MifQ=='
+
+    if args.log:
+        mode = 'async'
+    else:
+        mode = 'debug'
+
+    hard_ware_monitoring = True
+
+    run = neptune.init('sunghoshin/%s' %option.result['meta']['project_folder'], api_token=token,
+                       capture_stdout=hard_ware_monitoring,
+                       capture_stderr=hard_ware_monitoring,
+                       capture_hardware_metrics=hard_ware_monitoring,
+                       mode=mode,
+                       tags=['TOTAL']
+                       )
+
     best_trial = result.get_best_trial("loss", "min", "last")
-    print("Best trial config: {}".format(best_trial.config))
-    print("Best trial final validation loss: {}".format(
-        best_trial.last_result["loss"]))
-    print("Best trial final validation accuracy: {}".format(
-        best_trial.last_result["accuracy"]))
+
+    configs = best_trial.config
+    for key, item in configs.items():
+        run['best_trial/config/%s' %key] = item
+
+    run['best_trial/val_loss'] = best_trial.last_result["loss"]
+    run['best_trial/val_acc'] = best_trial.last_result["accuracy"]

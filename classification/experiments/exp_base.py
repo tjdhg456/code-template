@@ -39,6 +39,10 @@ if __name__=='__main__':
     json_meta_path = '../config/base_meta.json'
     json_meta = load_json(json_meta_path)
 
+    # Meta Configuration
+    json_tune_path = '../config/base_tune.json'
+    json_tune = load_json(json_tune_path)
+
     # Global Option
     train_prop = 1.
     val_prop = 1.
@@ -47,6 +51,7 @@ if __name__=='__main__':
     mixed_precision = True
 
     ddp = False
+    project_folder = 'module-merge'
 
     # Setup Configuration for Each Experiments
     if args.exp == 0:
@@ -154,7 +159,11 @@ if __name__=='__main__':
             # Modify the meta configuration
             json_meta['server'] = str(server)
             json_meta['save_dir'] = str(save_dir)
+            json_meta['project_folder'] = project_folder
             save_json(json_meta, os.path.join(save_dir, exp_name, str(exp_num), 'meta.json'))
+
+            # Modify the tune configuration
+            save_json(json_tune, os.path.join(save_dir, exp_name, str(exp_num), 'tune.json'))
 
             # Run !
             script = 'python ../main.py --save_dir %s --exp_name %s --exp_num %d' %(save_dir, exp_name, exp_num)

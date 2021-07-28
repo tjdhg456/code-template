@@ -52,6 +52,7 @@ if __name__=='__main__':
     ddp = False
 
     tuning = True
+    project_folder = 'module-merge'
 
     # Setup Configuration for Each Experiments
     if args.exp == 0:
@@ -66,9 +67,9 @@ if __name__=='__main__':
 
         w_d = 1e-4
         lr = 0.1
-        epoch = 3
+        epoch = 2
 
-        train_prop = 1.
+        train_prop = 0.1
         val_prop = 1.
 
         batch_size = 256
@@ -77,7 +78,7 @@ if __name__=='__main__':
 
         depth = 34
 
-        num_trials = 10
+        num_trials = 3
         cpus_per_trail = 5
         gpus_per_trail = 1
 
@@ -118,6 +119,7 @@ if __name__=='__main__':
     # Modify the meta configuration
     json_meta['server'] = str(server)
     json_meta['save_dir'] = str(save_dir)
+    json_meta['project_folder'] = project_folder
     save_json(json_meta, os.path.join(save_dir, exp_name, str(exp_num), 'meta.json'))
 
 
