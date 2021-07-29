@@ -141,3 +141,5 @@ dmypy.json
 .neptune
 .idea
 .__pycache__
+.vscode
+.idea
